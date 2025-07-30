@@ -15,6 +15,7 @@ def change_page_num_now(x):
 
 change_page_num_now(2)
 
+printing_now = False
 can_get_file = False
 can_get_gcode  = False
 
@@ -75,6 +76,7 @@ def load_file_menu(message):
     button1 = telebot.types.KeyboardButton(text="Назад")
     keyboard.add(button1)
     bot.send_message(message.chat.id,'Отправте Gcode',reply_markup=keyboard)
+    can_get_file = True
     change_page_num_now(4)
 
 def choose_file_menu(message):
@@ -125,13 +127,16 @@ def get_printer_info(message):
         printer_info = json.loads(requests.get(url+'/printer/info').text)
         extruder = json.loads(requests.post(url+'/printer/objects/query',json={"objects": {"extruder": None}}, headers = headers_json).text)
         heater_bed = json.loads(requests.post(url+'/printer/objects/query',json={"objects": {"heater_bed": None}}, headers = headers_json).text)
-        bot.send_message(message.chat.id, ('printer status: '+str(printer_info['result']['state']) + '\n'
+        bot.send_message(message.chat.id, ('printer status: ' + str(printer_info['result']['state']) + '\n'
                                            + 'bed temp: '+ str(heater_bed['result']['status']['heater_bed']['temperature'])+ '\n'
                                            + 'bed tar: ' + str(heater_bed['result']['status']['heater_bed']['target']) + '\n'
                                            + 'ext temp: ' + str(extruder['result']['status']['extruder']['temperature']) + '\n'
                                            + 'ext temp: ' + str(extruder['result']['status']['extruder']['target'])))
         #idle_timeout print_stats
-
+        if str(printer_info['result']['state']) == 'ready':
+            printing_now = False
+        elif str(printer_info['result']['state']) == 'ready':
+            printing_now = True 
     elif message.text.lower() == 'экстреная остановка':
         get_statu_emergency_stop  = json.loads(requests.post(url+'/printer/emergency_stop').text)       
         bot.send_message(message.chat.id, get_statu_emergency_stop['result'])
