@@ -12,12 +12,9 @@ headers_json = {"Content-Type": "application/json"}
 def change_page_num_now(x):
     global page_number_now
     page_number_now = x
-def change_page_num_old(x): 
-    global page_number_old
-    page_number_old = x
-#заменить start на main_menu
+
 change_page_num_now(2)
-change_page_num_old(1)
+
 can_get_file = False
 can_get_gcode  = False
 
@@ -34,8 +31,6 @@ def login(func):
             bot.send_message(message.chat.id, 'Твой id если что: ' + str(message.chat.id))
     return wrapper
 
-
-
 def get_name_photo_in_folder(folder_path):
     image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')
     files = os.listdir(folder_path)
@@ -44,7 +39,7 @@ def get_name_photo_in_folder(folder_path):
             return f
     return None
 
-def start_menu(message):
+def main_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     button1 = telebot.types.KeyboardButton(text="Получить информацию о принтере")
     button2 = telebot.types.KeyboardButton(text="Экстреная остановка")
@@ -53,6 +48,7 @@ def start_menu(message):
     button5 = telebot.types.KeyboardButton(text="Доп меню")
     keyboard.add(button1, button2, button3, button4, button5)
     bot.send_message(message.chat.id,'Добро пожаловать в бота для 3д принтера',reply_markup=keyboard)
+    change_page_num_now(1)
 
 def dop_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -63,6 +59,7 @@ def dop_menu(message):
     button4 = telebot.types.KeyboardButton(text="Назад")
     keyboard.add(button_support, button1, button2, button3, button4)
     bot.send_message(message.chat.id,'Доп меню',reply_markup=keyboard)
+    change_page_num_now(2)
 
 def start_print_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -71,12 +68,14 @@ def start_print_menu(message):
     button3 = telebot.types.KeyboardButton(text="Назад")
     keyboard.add(button1, button2, button3)
     bot.send_message(message.chat.id,'Выберите опцию',reply_markup=keyboard)
+    change_page_num_now(3)
 
 def load_file_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     button1 = telebot.types.KeyboardButton(text="Назад")
     keyboard.add(button1)
-    bot.send_message(message.chat.id,'Выберите опцию',reply_markup=keyboard)
+    bot.send_message(message.chat.id,'Отправте Gcode',reply_markup=keyboard)
+    change_page_num_now(4)
 
 def choose_file_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -87,42 +86,47 @@ def choose_file_menu(message):
     result_str = ''
     for i in range(len(gcode_list)-1):
         unsort_list.append((gcode_list[i]['path'][:-6],gcode_list[i]['modified'],time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(gcode_list[i]['modified']))))
+    global sort_list
     sort_list = sorted(unsort_list, key=lambda second: second[1])
     for iter in sort_list:
         result_str = result_str + str(iter[0]) + " " + str(iter[2]) +'\n'
     bot.send_message(message.chat.id,result_str)
     bot.send_message(message.chat.id,"Выберите модель и отправте её название",reply_markup=keyboard)
-    page_number_old = page_number_now
-    page_number_now = 5
+    change_page_num_now(5)
+    
+def printing_start(message):
+    if checking_availability(message):
+        #if 'ok' == json.loads(requests.post(url+f"/printer/print/start?filename={str(message.text)+'.gcode'}", headers = headers_json).text)['result']:
+        bot.send_message(message.chat.id,'Печать была запущен')
+        #else: bot.send_message(message.chat.id,'Ошибка')
 
-def checking_availability(message, gcode_list):
-    if str(message.text) in gcode_list:
-        return 1
-    else:
-        bot.send_message(message.chat.id,'Файл не найден')
+def checking_availability(message):
+    for i in range(len(sort_list)):
+        if str(message.text) == sort_list[i][0]:
+            return 1
+    else:bot.send_message(message.chat.id,'Файл не был найден')
 
 if page_number_now != 1:
     @bot.message_handler(commands=['help', 'start'])
     @login
     def welcome(message):
         print('start menu')
-        change_page_num_old(page_number_now)
         change_page_num_now(1)
-        start_menu(message)
+        main_menu(message)
         
 
 @bot.message_handler()
 @login
 def get_printer_info(message):
-    print('пользователь прислал сообщение:')
-    print(message.text.lower())
+    #print('пользователь прислал сообщение:')
+    #print(message.text.lower())
     if message.text.lower() == 'получить информацию о принтере':
-        print('нажата кнопка получить информацию о принтере' )
+        #print('нажата кнопка получить информацию о принтере' )
         printer_info = json.loads(requests.get(url+'/printer/info').text)
-        bot.send_message(message.chat.id, printer_info['result']['state']) #общее состояние соеденить!!!!
         extruder = json.loads(requests.post(url+'/printer/objects/query',json={"objects": {"extruder": None}}, headers = headers_json).text)
         heater_bed = json.loads(requests.post(url+'/printer/objects/query',json={"objects": {"heater_bed": None}}, headers = headers_json).text)
-        bot.send_message(message.chat.id, ('bed temp: '+ str(heater_bed['result']['status']['heater_bed']['temperature'])+ '\n'
+        bot.send_message(message.chat.id, ('printer status: '+str(printer_info['result']['state']) + '\n'
+                                           + 'bed temp: '+ str(heater_bed['result']['status']['heater_bed']['temperature'])+ '\n'
                                            + 'bed tar: ' + str(heater_bed['result']['status']['heater_bed']['target']) + '\n'
                                            + 'ext temp: ' + str(extruder['result']['status']['extruder']['temperature']) + '\n'
                                            + 'ext temp: ' + str(extruder['result']['status']['extruder']['target'])))
@@ -151,24 +155,17 @@ def get_printer_info(message):
         else:
             print("Фото в папке не найдено")
 
-    elif message.text.lower() == 'старт печати':
-        print('вызвано')
-        change_page_num_old(page_number_now)
-        change_page_num_now(3)
-        start_print_menu(message)
-
-    elif message.text.lower() == 'доп меню':
-        print('вызвано')
-        change_page_num_old(page_number_now)
-        change_page_num_now(2)
-        dop_menu(message)
+    elif message.text.lower() == 'старт печати': start_print_menu(message)
+    elif message.text.lower() == 'доп меню': dop_menu(message)
+    elif message.text.lower() == 'загрузить файл': load_file_menu(message)
+    elif message.text.lower() == 'выбрать файл': choose_file_menu(message)
     elif message.text.lower() == 'назад':
-        print('вызвано')
-        if page_number_old == 1: start_menu(message)
-        elif page_number_old == 2: dop_menu(message)
-        elif page_number_old == 3: start_print_menu(message)
-        elif page_number_old == 4: load_file_menu(message)
-        elif page_number_old == 5: choose_file_menu(message)
+        if page_number_now == 2: main_menu(message)
+        elif page_number_now == 3: main_menu(message)
+        elif page_number_now == 4: start_print_menu(message)
+        elif page_number_now == 5: start_print_menu(message)
+    elif page_number_now == 5 and message.text.lower() != 'назад':
+        printing_start(message) 
 
 if can_get_gcode == True:
     @bot.message_handler(commands=['home'])
