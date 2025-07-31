@@ -98,16 +98,16 @@ def choose_file_menu(message):
     
 def printing_start(message):
     if checking_availability(message):
-        #if 'ok' == json.loads(requests.post(url+f"/printer/print/start?filename={str(message.text)+'.gcode'}", headers = headers_json).text)['result']:
-        bot.send_message(message.chat.id,'Печать была запущен')
-        #else: bot.send_message(message.chat.id,'Ошибка')
+        if 'ok' == json.loads(requests.post(url+f"/printer/print/start?filename={str(message.text)+'.gcode'}", headers = headers_json).text)['result']:
+            bot.send_message(message.chat.id,'Печать была запущен')
+        else: bot.send_message(message.chat.id,'Ошибка')
 
 def checking_availability(message):
     for i in range(len(sort_list)):
         if str(message.text) == sort_list[i][0]:
             return 1
     else:bot.send_message(message.chat.id,'Файл не был найден')
-
+ 
 if page_number_now != 1:
     @bot.message_handler(commands=['help', 'start'])
     @login
@@ -119,24 +119,61 @@ if page_number_now != 1:
 
 @bot.message_handler()
 @login
-def get_printer_info(message):
-    #print('пользователь прислал сообщение:')
-    #print(message.text.lower())
+def take_message(message):
     if message.text.lower() == 'получить информацию о принтере':
-        #print('нажата кнопка получить информацию о принтере' )
-        printer_info = json.loads(requests.get(url+'/printer/info').text)
+        
+        kiliper_state = json.loads(requests.get(url+'/printer/info').text)
         extruder = json.loads(requests.post(url+'/printer/objects/query',json={"objects": {"extruder": None}}, headers = headers_json).text)
         heater_bed = json.loads(requests.post(url+'/printer/objects/query',json={"objects": {"heater_bed": None}}, headers = headers_json).text)
-        bot.send_message(message.chat.id, ('printer status: ' + str(printer_info['result']['state']) + '\n'
-                                           + 'bed temp: '+ str(heater_bed['result']['status']['heater_bed']['temperature'])+ '\n'
-                                           + 'bed tar: ' + str(heater_bed['result']['status']['heater_bed']['target']) + '\n'
-                                           + 'ext temp: ' + str(extruder['result']['status']['extruder']['temperature']) + '\n'
-                                           + 'ext temp: ' + str(extruder['result']['status']['extruder']['target'])))
-        #idle_timeout print_stats
-        if str(printer_info['result']['state']) == 'ready':
+        print_stats = json.loads(requests.post(url+'/printer/objects/query',json={"objects": {"print_stats": None}}, headers = headers_json).text)
+        virtual_sdcard = json.loads(requests.post(url+'/printer/objects/query',json={"objects": {"virtual_sdcard": None}}, headers = headers_json).text)
+
+        printer_state = print_stats['result']['status']['print_stats']['state'] 
+
+        printing_model = None
+        printing_percent = None
+        time_for_complete = None
+        total_time_printing = time.strftime("%H:%M:%S", time.gmtime(print_stats['result']['status']['print_stats']['total_duration']))
+
+        if printer_state == 'complete':
             printing_now = False
-        elif str(printer_info['result']['state']) == 'ready':
-            printing_now = True 
+            printer_state_message = 'Принтер закончил печать \nПечать составила: ' + str(total_time_printing)
+            printing_model = print_stats['result']['status']['print_stats']['filename'] + '\n'
+
+        elif printer_state == 'standby':
+            printing_now = False
+            printer_state_message = 'Принтер ожидает начала печати'
+
+        elif printer_state == 'printing':
+            printing_now = True
+            printer_state_message = 'Принтер в процессе печати \nПечать идёт: ' + str(total_time_printing)
+            printing_model = print_stats['result']['status']['print_stats']['filename'] + '\n'
+            printing_percent = str(virtual_sdcard['result']['status']['virtual_sdcard']['progress']*1000//10) + '%' + '\n'
+            metadata_gcode_unix = json.loads(requests.post(url+'/server/files/metadata?filename=tools/'+ printing_model).text)['result']['estimated_time']
+            time_for_complete = str(time.strftime("%H:%M:%S", time.gmtime(metadata_gcode_unix)) - total_time_printing) + '\n'
+
+        elif printer_state == 'paused':
+            printing_now = True
+            printer_state_message = 'Печать поставлена на паузу \nПечать шла: ' + str(total_time_printing)
+            printing_model = print_stats['result']['status']['print_stats']['filename'] + '\n'
+            printing_percent = str(virtual_sdcard['result']['status']['virtual_sdcard']['progress']*1000//10) + '%' + '\n'
+            metadata_gcode_unix = json.loads(requests.post(url+'/server/files/metadata?filename=tools/'+ printing_model).text)['result']['estimated_time'] 
+            time_for_complete = str(time.strftime("%H:%M:%S", time.gmtime(metadata_gcode_unix)) - total_time_printing) + '\n'
+
+        elif printer_state == 'error':
+            printing_now = True
+            printer_state_message = 'Ошибка печати модели'
+            printing_model = print_stats['result']['status']['print_stats']['filename'] + '\n'
+
+        bot.send_message(message.chat.id, (printer_state_message + '\n'
+                                           + f'{printing_model if printing_model is not None else ''}' 
+                                           + f'{printing_percent if printing_percent is not None else ''}'
+                                           + f'{ time_for_complete if time_for_complete is not None else ''}'
+                                           + 'Температура стола: '+ str(heater_bed['result']['status']['heater_bed']['temperature'])+ 'C ==> '
+                                           + str(heater_bed['result']['status']['heater_bed']['target']) + 'C' + '\n'
+                                           + 'Температура экструдера: ' + str(extruder['result']['status']['extruder']['temperature']) + 'C ==>'
+                                           + str(extruder['result']['status']['extruder']['target']) + 'C' ))
+
     elif message.text.lower() == 'экстреная остановка':
         get_statu_emergency_stop  = json.loads(requests.post(url+'/printer/emergency_stop').text)       
         bot.send_message(message.chat.id, get_statu_emergency_stop['result'])
@@ -167,7 +204,9 @@ def get_printer_info(message):
     elif message.text.lower() == 'назад':
         if page_number_now == 2: main_menu(message)
         elif page_number_now == 3: main_menu(message)
-        elif page_number_now == 4: start_print_menu(message)
+        elif page_number_now == 4: 
+            start_print_menu(message)
+            can_get_file = False
         elif page_number_now == 5: start_print_menu(message)
     elif page_number_now == 5 and message.text.lower() != 'назад':
         printing_start(message) 
