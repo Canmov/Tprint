@@ -32,3 +32,10 @@ headers_json = {"Content-Type": "application/json"}
 #print(print_stats['result']['status']['print_stats']['total_duration']/60)
 #print(print_stats['result']['status']['print_stats']['state'])
 #print(time.strftime("%H:%M:%S", time.gmtime(print_stats['result']['status']['print_stats']['total_duration'])))
+
+print_stats = json.loads(requests.post(url+'/printer/objects/query',json={"objects": {"print_stats": None}}, headers = headers_json).text)
+printing_model = print_stats['result']['status']['print_stats']['filename']
+printing_model_str = print_stats['result']['status']['print_stats']['filename'] + '\n'
+print(printing_model)
+print(json.loads(requests.get(url+'/server/files/metadata?filename='+ printing_model).text)['result']['estimated_time']//60)
+response = requests.get(url + '/server/files/metadata', params={"filename": "LFD_liner_2.gcode"})

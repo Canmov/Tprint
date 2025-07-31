@@ -99,7 +99,8 @@ def choose_file_menu(message):
 def printing_start(message):
     if checking_availability(message):
         if 'ok' == json.loads(requests.post(url+f"/printer/print/start?filename={str(message.text)+'.gcode'}", headers = headers_json).text)['result']:
-            bot.send_message(message.chat.id,'Печать была запущен')
+            bot.send_message(message.chat.id,'Печать была запущена')
+            main_menu(message)
         else: bot.send_message(message.chat.id,'Ошибка')
 
 def checking_availability(message):
@@ -132,8 +133,9 @@ def take_message(message):
 
         printing_model = None
         printing_percent = None
-        time_for_complete = None
-        total_time_printing = time.strftime("%H:%M:%S", time.gmtime(print_stats['result']['status']['print_stats']['total_duration']))
+        time_for_complete = None #8 минуты нагрев добавить, ограничить если отрицательно 
+        total_time_printing_unix = print_stats['result']['status']['print_stats']['total_duration']
+        total_time_printing = time.strftime("%H:%M:%S", time.gmtime(total_time_printing_unix))
 
         if printer_state == 'complete':
             printing_now = False
@@ -149,16 +151,16 @@ def take_message(message):
             printer_state_message = 'Принтер в процессе печати \nПечать идёт: ' + str(total_time_printing)
             printing_model = print_stats['result']['status']['print_stats']['filename'] + '\n'
             printing_percent = str(virtual_sdcard['result']['status']['virtual_sdcard']['progress']*1000//10) + '%' + '\n'
-            metadata_gcode_unix = json.loads(requests.post(url+'/server/files/metadata?filename=tools/'+ printing_model).text)['result']['estimated_time']
-            time_for_complete = str(time.strftime("%H:%M:%S", time.gmtime(metadata_gcode_unix)) - total_time_printing) + '\n'
-
+            metadata_gcode_unix = json.loads(requests.get(url+'/server/files/metadata?filename='+ printing_model).text)['result']['estimated_time']
+            time_for_complete = str(time.strftime("%H:%M:%S", time.gmtime(metadata_gcode_unix - total_time_printing_unix))) + '\n'
+            
         elif printer_state == 'paused':
             printing_now = True
             printer_state_message = 'Печать поставлена на паузу \nПечать шла: ' + str(total_time_printing)
             printing_model = print_stats['result']['status']['print_stats']['filename'] + '\n'
             printing_percent = str(virtual_sdcard['result']['status']['virtual_sdcard']['progress']*1000//10) + '%' + '\n'
-            metadata_gcode_unix = json.loads(requests.post(url+'/server/files/metadata?filename=tools/'+ printing_model).text)['result']['estimated_time'] 
-            time_for_complete = str(time.strftime("%H:%M:%S", time.gmtime(metadata_gcode_unix)) - total_time_printing) + '\n'
+            metadata_gcode_unix = json.loads(requests.get(url+'/server/files/metadata?filename='+ printing_model).text)['result']['estimated_time']
+            time_for_complete = str(time.strftime("%H:%M:%S", time.gmtime(metadata_gcode_unix - total_time_printing_unix))) + '\n'
 
         elif printer_state == 'error':
             printing_now = True
@@ -167,8 +169,8 @@ def take_message(message):
 
         bot.send_message(message.chat.id, (printer_state_message + '\n'
                                            + f'{printing_model if printing_model is not None else ''}' 
-                                           + f'{printing_percent if printing_percent is not None else ''}'
-                                           + f'{ time_for_complete if time_for_complete is not None else ''}'
+                                           + f'{'Процентов напечатано: ' + printing_percent if printing_percent is not None else ''}'
+                                           + f'{'Время до завершения: ' + time_for_complete if time_for_complete is not None else ''}'
                                            + 'Температура стола: '+ str(heater_bed['result']['status']['heater_bed']['temperature'])+ 'C ==> '
                                            + str(heater_bed['result']['status']['heater_bed']['target']) + 'C' + '\n'
                                            + 'Температура экструдера: ' + str(extruder['result']['status']['extruder']['temperature']) + 'C ==>'
@@ -244,6 +246,7 @@ if can_get_file == True:
                 new_file.write(downloaded_file)
 
             bot.reply_to(message, f"Файл сохранён: {full_path}")
+            start_print_menu(message)
         except Exception as e:
             bot.reply_to(message, f"Ошибка при сохранении файла: {e}")      
 
