@@ -1,12 +1,11 @@
 import subprocess
 import time
-#this for windows
-#i dont know for linux
-print_action = False
+
+print_action = True
 
 def run_adb_command(command):
     if command[0] == 'adb':
-        adb_path = r"./adb/adb.exe"  # укажите путь к adb.exe
+        adb_path = r"/usr/lib/android-sdk/platform-tools/adb"  # укажите путь к adb
         full_command = [adb_path] + command[1:]
     else:
         full_command = command
@@ -16,10 +15,7 @@ def run_adb_command(command):
 def check_devices():
       stdout = run_adb_command(['adb', 'devices'])
       time.sleep(1)
-      if stdout.count('device') > 0:
-           return 'Device is connet'
-      else:
-           return 'Device not found' 
+      return stdout 
 
 def on_or_off_disply():
       stdout, stderr, code = run_adb_command(['adb', 'shell','input','keyevent', '26'])

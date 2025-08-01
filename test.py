@@ -5,7 +5,9 @@ from test4 import *
 import telebot
 
 url = 'http://192.168.0.104'
-save_dir = r'.\printer_data\gcodes'
+
+save_dir_gcode = r'.\printer_data\gcodes'
+save_dir_camera = r'./Camera/'
 
 headers_json = {"Content-Type": "application/json"}
 
@@ -13,11 +15,11 @@ def change_page_num_now(x):
     global page_number_now
     page_number_now = x
 
-change_page_num_now(2)
+change_page_num_now('dop_menu')
 
 printing_now = False
 can_get_file = False
-can_get_gcode  = False
+can_send_gcode  = False
 
 MY_ID = 1626917666
 API_TOKEN = '8108895059:AAEZ8B85efQFpCzSJXzHdAdYNPBlV8das70'
@@ -32,14 +34,7 @@ def login(func):
             bot.send_message(message.chat.id, 'Твой id если что: ' + str(message.chat.id))
     return wrapper
 
-def get_name_photo_in_folder(folder_path):
-    image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')
-    files = os.listdir(folder_path)
-    for f in files:
-        if f.lower().endswith(image_extensions):
-            return f
-    return None
-
+#menu:
 def main_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     button1 = telebot.types.KeyboardButton(text="Получить информацию о принтере")
@@ -49,7 +44,7 @@ def main_menu(message):
     button5 = telebot.types.KeyboardButton(text="Доп меню")
     keyboard.add(button1, button2, button3, button4, button5)
     bot.send_message(message.chat.id,'Добро пожаловать в бота для 3д принтера',reply_markup=keyboard)
-    change_page_num_now(1)
+    change_page_num_now('main_menu')
 
 def dop_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -60,7 +55,7 @@ def dop_menu(message):
     button5 = telebot.types.KeyboardButton(text="Назад")
     keyboard.add(button1, button2, button3, button4, button5)
     bot.send_message(message.chat.id,'Доп меню',reply_markup=keyboard)
-    change_page_num_now(2)
+    change_page_num_now('dop_menu')
 
 def start_print_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -69,7 +64,7 @@ def start_print_menu(message):
     button3 = telebot.types.KeyboardButton(text="Назад")
     keyboard.add(button1, button2, button3)
     bot.send_message(message.chat.id,'Выберите опцию',reply_markup=keyboard)
-    change_page_num_now(3)
+    change_page_num_now('start_print_menu')
 
 def load_file_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -77,7 +72,7 @@ def load_file_menu(message):
     keyboard.add(button1)
     bot.send_message(message.chat.id,'Отправте Gcode',reply_markup=keyboard)
     can_get_file = True
-    change_page_num_now(4)
+    change_page_num_now('load_file_menu')
 
 def choose_file_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -94,8 +89,9 @@ def choose_file_menu(message):
         result_str = result_str + str(iter[0]) + " " + str(iter[2]) +'\n'
     bot.send_message(message.chat.id,result_str)
     bot.send_message(message.chat.id,"Выберите модель и отправте её название",reply_markup=keyboard)
-    change_page_num_now(5)
-    
+    change_page_num_now('choose_file_menu')
+
+#функции:    
 def printing_start(message):
     if checking_availability(message):
         if 'ok' == json.loads(requests.post(url+f"/printer/print/start?filename={str(message.text)+'.gcode'}", headers = headers_json).text)['result']:
@@ -109,12 +105,43 @@ def checking_availability(message):
             return 1
     else:bot.send_message(message.chat.id,'Файл не был найден')
  
-if page_number_now != 1:
+def emergency_stop(message):
+    get_statu_emergency_stop  = json.loads(requests.post(url+'/printer/emergency_stop').text)       
+    bot.send_message(message.chat.id, get_statu_emergency_stop['result'])
+
+def get_name_photo_in_folder(folder_path):
+    image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')
+    files = os.listdir(folder_path)
+    for f in files:
+        if f.lower().endswith(image_extensions):
+            return f
+    return None
+
+def send_photo_by_printer(message):
+    try:
+        main_camera()
+    except Exception as e:
+        bot.reply_to(message, f"Ошибка при сохранении файла: {e}")
+    file_name = get_name_photo_in_folder(save_dir_camera)
+    if file_name:
+        print("Найден файл:", file_name)
+        file_path_img  = save_dir_camera + file_name
+        try:
+            with open(file_path_img, 'rb') as file:
+                bot.send_photo(message.chat.id, file)
+                time.sleep(3)
+            os.remove(file_path_img)
+        except Exception as e:
+            bot.send_message(message.chat.id, f"Ошибка при отправке файла: {e}")
+    else:
+        print("Фото в папке не найдено")
+
+#Обработка сообщений от пользлвателя
+if page_number_now != 'main_menu':
     @bot.message_handler(commands=['help', 'start'])
     @login
     def welcome(message):
-        print('start menu')
-        change_page_num_now(1)
+        change_page_num_now('main_menu')
         main_menu(message)
         
 
@@ -180,44 +207,23 @@ def take_message(message):
                                            + 'Температура экструдера: ' + str(extruder['result']['status']['extruder']['temperature']) + 'C ==>'
                                            + str(extruder['result']['status']['extruder']['target']) + 'C' ))
 
-    elif message.text.lower() == 'экстреная остановка':
-        get_statu_emergency_stop  = json.loads(requests.post(url+'/printer/emergency_stop').text)       
-        bot.send_message(message.chat.id, get_statu_emergency_stop['result'])
-
-    elif message.text.lower() == 'фото с камеры':
-        try:
-            main_camera()
-        except Exception as e:
-            bot.reply_to(message, f"Ошибка при сохранении файла: {e}")
-        file_name = get_name_photo_in_folder('./')
-        if file_name:
-            print("Найден файл:", file_name)
-            file_path  = './' + file_name
-            try:
-                with open(file_path, 'rb') as file:
-                    bot.send_photo(message.chat.id, file)
-                    time.sleep(3)
-                #os.remove(file_path)
-            except Exception as e:
-                bot.send_message(message.chat.id, f"Ошибка при отправке файла: {e}")
-        else:
-            print("Фото в папке не найдено")
-
+    elif message.text.lower() == 'экстреная остановка':emergency_stop(message)
+    elif message.text.lower() == 'фото с камеры':send_photo_by_printer(message)
     elif message.text.lower() == 'старт печати': start_print_menu(message)
     elif message.text.lower() == 'доп меню': dop_menu(message)
     elif message.text.lower() == 'загрузить файл': load_file_menu(message)
     elif message.text.lower() == 'выбрать файл': choose_file_menu(message)
     elif message.text.lower() == 'назад':
-        if page_number_now == 2: main_menu(message)
-        elif page_number_now == 3: main_menu(message)
-        elif page_number_now == 4: 
+        if page_number_now == 'dop_,menu': main_menu(message)
+        elif page_number_now == 'start_print_menu': main_menu(message)
+        elif page_number_now == 'load_menu': 
             start_print_menu(message)
             can_get_file = False
-        elif page_number_now == 5: start_print_menu(message)
-    elif page_number_now == 5 and message.text.lower() != 'назад': printing_start(message) 
-    elif page_number_now == 2 and message.text.lower() != 'проверить ADB': bot.send_message(message.chat.id, check_devices()) 
+        elif page_number_now == 'choose_file_menu': start_print_menu(message)
+    elif page_number_now == 'choose_file_menu' and message.text.lower() != 'назад': printing_start(message) 
+    elif page_number_now == 'dop_menu' and message.text.lower() == 'проверить ADB': bot.send_message(message.chat.id, check_devices()) 
 
-if can_get_gcode == True:
+if can_send_gcode == True:
     @bot.message_handler(commands=['home'])
     def gcode_g28(message): #паркует принтер
         requests.post(url+'/printer/gcode/script',json={"script": "G28"})
@@ -233,17 +239,16 @@ if can_get_file == True:
 
         # Получаем путь к файлу на серверах Telegram
             file_info = bot.get_file(file_id)
-            file_path = file_info.file_path
+            file_path_gcode = file_info.file_path
 
         # Скачиваем файл
-            downloaded_file = bot.download_file(file_path)
+            downloaded_file = bot.download_file(file_path_gcode)
 
         # Путь сохранения (создадим папку, если её нет)
-            save_dir = 'files'
-            if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
+            if not os.path.exists(save_dir_gcode):
+                os.makedirs(save_dir_gcode)
 
-            full_path = os.path.join(save_dir, filename)
+            full_path = os.path.join(save_dir_gcode, filename)
 
         # Сохраняем файл в бинарном режиме
             with open(full_path, 'wb') as new_file:
