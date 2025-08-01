@@ -53,12 +53,12 @@ def main_menu(message):
 
 def dop_menu(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    button_support = telebot.types.KeyboardButton(text="ф1")
-    button1 = telebot.types.KeyboardButton(text="ф2")
-    button2 = telebot.types.KeyboardButton(text="ф3")
-    button3 = telebot.types.KeyboardButton(text="ф4")
-    button4 = telebot.types.KeyboardButton(text="Назад")
-    keyboard.add(button_support, button1, button2, button3, button4)
+    button1 = telebot.types.KeyboardButton(text="Проверить ADB")
+    button2 = telebot.types.KeyboardButton(text="ф2")
+    button3 = telebot.types.KeyboardButton(text="ф3")
+    button4 = telebot.types.KeyboardButton(text="ф4")
+    button5 = telebot.types.KeyboardButton(text="Назад")
+    keyboard.add(button1, button2, button3, button4, button5)
     bot.send_message(message.chat.id,'Доп меню',reply_markup=keyboard)
     change_page_num_now(2)
 
@@ -137,10 +137,13 @@ def take_message(message):
         total_time_printing_unix = print_stats['result']['status']['print_stats']['total_duration']
         total_time_printing = time.strftime("%H:%M:%S", time.gmtime(total_time_printing_unix))
 
+        str_message_for_user = ''
+
         if printer_state == 'complete':
             printing_now = False
             printer_state_message = 'Принтер закончил печать \nПечать составила: ' + str(total_time_printing)
             printing_model = print_stats['result']['status']['print_stats']['filename'] + '\n'
+            str_message_for_user = str_message_for_user + printing_model
 
         elif printer_state == 'standby':
             printing_now = False
@@ -153,7 +156,8 @@ def take_message(message):
             printing_percent = str(virtual_sdcard['result']['status']['virtual_sdcard']['progress']*1000//10) + '%' + '\n'
             metadata_gcode_unix = json.loads(requests.get(url+'/server/files/metadata?filename='+ printing_model).text)['result']['estimated_time']
             time_for_complete = str(time.strftime("%H:%M:%S", time.gmtime(metadata_gcode_unix - total_time_printing_unix))) + '\n'
-            
+            str_message_for_user = str_message_for_user + printing_model + 'Процентов напечатано: ' + printing_percent + 'Время до завершения: ' + time_for_complete
+
         elif printer_state == 'paused':
             printing_now = True
             printer_state_message = 'Печать поставлена на паузу \nПечать шла: ' + str(total_time_printing)
@@ -161,16 +165,16 @@ def take_message(message):
             printing_percent = str(virtual_sdcard['result']['status']['virtual_sdcard']['progress']*1000//10) + '%' + '\n'
             metadata_gcode_unix = json.loads(requests.get(url+'/server/files/metadata?filename='+ printing_model).text)['result']['estimated_time']
             time_for_complete = str(time.strftime("%H:%M:%S", time.gmtime(metadata_gcode_unix - total_time_printing_unix))) + '\n'
+            str_message_for_user = str_message_for_user + printing_model + 'Процентов напечатано: ' + printing_percent + 'Время до завершения: ' + time_for_complete
 
         elif printer_state == 'error':
             printing_now = True
             printer_state_message = 'Ошибка печати модели'
             printing_model = print_stats['result']['status']['print_stats']['filename'] + '\n'
-
+            str_message_for_user = str_message_for_user + printing_model
+        
         bot.send_message(message.chat.id, (printer_state_message + '\n'
-                                           + f'{printing_model if printing_model is not None else ''}' 
-                                           + f'{'Процентов напечатано: ' + printing_percent if printing_percent is not None else ''}'
-                                           + f'{'Время до завершения: ' + time_for_complete if time_for_complete is not None else ''}'
+                                           + str_message_for_user
                                            + 'Температура стола: '+ str(heater_bed['result']['status']['heater_bed']['temperature'])+ 'C ==> '
                                            + str(heater_bed['result']['status']['heater_bed']['target']) + 'C' + '\n'
                                            + 'Температура экструдера: ' + str(extruder['result']['status']['extruder']['temperature']) + 'C ==>'
@@ -181,10 +185,10 @@ def take_message(message):
         bot.send_message(message.chat.id, get_statu_emergency_stop['result'])
 
     elif message.text.lower() == 'фото с камеры':
-        #try:
-        #    main_camera()
-        #except Exception as e:
-        #    bot.reply_to(message, f"Ошибка при сохранении файла: {e}")
+        try:
+            main_camera()
+        except Exception as e:
+            bot.reply_to(message, f"Ошибка при сохранении файла: {e}")
         file_name = get_name_photo_in_folder('./')
         if file_name:
             print("Найден файл:", file_name)
@@ -210,8 +214,8 @@ def take_message(message):
             start_print_menu(message)
             can_get_file = False
         elif page_number_now == 5: start_print_menu(message)
-    elif page_number_now == 5 and message.text.lower() != 'назад':
-        printing_start(message) 
+    elif page_number_now == 5 and message.text.lower() != 'назад': printing_start(message) 
+    elif page_number_now == 2 and message.text.lower() != 'проверить ADB': bot.send_message(message.chat.id, check_devices()) 
 
 if can_get_gcode == True:
     @bot.message_handler(commands=['home'])
