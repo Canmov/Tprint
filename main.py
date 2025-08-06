@@ -2,12 +2,13 @@ import requests
 import os
 import json
 from adb_Tprint import *
+from urllib.parse import quote
 import telebot
 from cfg import * 
  
 url = 'http://192.168.0.104'
 
-save_dir_gcode = r'.\printer_data\gcodes'
+save_dir_gcode = '/home/mord/printer_data/gcodes'
 save_dir_camera = r'./Camera'
 
 headers_json = {"Content-Type": "application/json"}
@@ -15,8 +16,14 @@ headers_json = {"Content-Type": "application/json"}
 def change_page_num_now(x):
     global page_number_now
     page_number_now = x
-
+    
 change_page_num_now('dop_menu')
+
+def change_can_get_file(x):
+    global can_get_file
+    can_get_file = x 
+
+change_can_get_file(False)
 
 printing_now = False
 can_get_file = False
@@ -44,7 +51,7 @@ def main_menu(message):
     button4 = telebot.types.KeyboardButton(text="Старт печати")
     button5 = telebot.types.KeyboardButton(text="Доп меню")
     keyboard.add(button1, button2, button3, button4, button5)
-    bot.send_message(message.chat.id,'Добро пожаловать в бота для 3д принтера',reply_markup=keyboard)
+    bot.send_message(message.chat.id,"Выберите действие: ", reply_markup=keyboard)
     change_page_num_now('main_menu')
 
 def dop_menu(message):
@@ -72,7 +79,7 @@ def load_file_menu(message):
     button1 = telebot.types.KeyboardButton(text="Назад")
     keyboard.add(button1)
     bot.send_message(message.chat.id,'Отправте Gcode',reply_markup=keyboard)
-    can_get_file = True
+    change_can_get_file(True)
     change_page_num_now('load_file_menu')
 
 def choose_file_menu(message):
@@ -95,10 +102,15 @@ def choose_file_menu(message):
 #функции:    
 def printing_start(message):
     if checking_availability(message):
-        if 'ok' == json.loads(requests.post(url+f"/printer/print/start?filename={str(message.text)+'.gcode'}", headers = headers_json).text)['result']:
-            bot.send_message(message.chat.id,'Печать была запущена')
-            main_menu(message)
-        else: bot.send_message(message.chat.id,'Ошибка')
+        filename_encoded = quote(message.text)
+        try:
+            str_out = json.loads(requests.post(url+f"/printer/print/start?filename={filename_encoded}.gcode", headers = headers_json).text) 
+            if 'ok' == str_out["result"]:
+                bot.send_message(message.chat.id,'Печать была запущена')
+                main_menu(message)
+            else:
+                bot.send_message(message.chat.id, str_out["error"]["message"])
+        except: bot.send_message(message.chat.id,'Ошибка запроса')
 
 def checking_availability(message):
     for i in range(len(sort_list)):
@@ -125,7 +137,7 @@ def send_photo_by_printer(message):
         bot.reply_to(message, f"Ошибка при сохранении файла: {e}")
     file_name = get_name_photo_in_folder(save_dir_camera)
     if file_name:
-        print("Найден файл:", file_name)
+        #print("Найден файл:", file_name)
         file_path_img  = save_dir_camera + f'/{file_name}'
         try:
             with open(file_path_img, 'rb') as file:
@@ -142,9 +154,9 @@ if page_number_now != 'main_menu':
     @bot.message_handler(commands=['help', 'start'])
     @login
     def welcome(message):
+        bot.send_message(message.chat.id, 'Добро пожаловать в бота для 3д принтера')
         change_page_num_now('main_menu')
         main_menu(message)
-        
 
 @bot.message_handler()
 @login
@@ -219,20 +231,15 @@ def take_message(message):
         elif page_number_now == 'start_print_menu': main_menu(message)
         elif page_number_now == 'load_menu': 
             start_print_menu(message)
-            can_get_file = False
+            change_can_get_file(False)
         elif page_number_now == 'choose_file_menu': start_print_menu(message)
+        elif page_number_now == 'load_file_menu': start_print_menu(message)
     elif page_number_now == 'choose_file_menu' and message.text.lower() != 'назад': printing_start(message) 
     elif page_number_now == 'dop_menu' and message.text.lower() == 'проверить ADB': bot.send_message(message.chat.id, check_devices()) 
 
-if can_send_gcode == True:
-    @bot.message_handler(commands=['home'])
-    def gcode_g28(message): #паркует принтер
-        requests.post(url+'/printer/gcode/script',json={"script": "G28"})
-        bot.send_message(message.chat.id,'Printer go home')
-
-if can_get_file == True:
-    @bot.message_handler(content_types=['document'])
-    def handle_gcode(message):
+@bot.message_handler(content_types=['document'])
+def handle_gcode(message):
+    if can_get_file:
         try:
         # Получаем file_id и имя файла
             file_id = message.document.file_id
@@ -244,11 +251,6 @@ if can_get_file == True:
 
         # Скачиваем файл
             downloaded_file = bot.download_file(file_path_gcode)
-
-        # Путь сохранения (создадим папку, если её нет)
-            if not os.path.exists(save_dir_gcode):
-                os.makedirs(save_dir_gcode)
-
             full_path = os.path.join(save_dir_gcode, filename)
 
         # Сохраняем файл в бинарном режиме
@@ -256,8 +258,16 @@ if can_get_file == True:
                 new_file.write(downloaded_file)
 
             bot.reply_to(message, f"Файл сохранён: {full_path}")
+            change_can_get_file(False)
             start_print_menu(message)
+
         except Exception as e:
-            bot.reply_to(message, f"Ошибка при сохранении файла: {e}")      
+            bot.reply_to(message, f"Ошибка при сохранении файла: {e}")        
+
+#if can_send_gcode == True:
+#    @bot.message_handler(commands=['home'])
+#    def gcode_g28(message): #паркует принтер
+#        requests.post(url+'/printer/gcode/script',json={"script": "G28"})
+#        bot.send_message(message.chat.id,'Printer go home')
 
 bot.infinity_polling()
